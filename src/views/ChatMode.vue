@@ -121,6 +121,15 @@ const showPreviewModal = ref(false);
 const previewContent = ref('');
 const previewTitle = ref('');
 
+// Report Mode Logic
+const reportMode = ref('open'); // 'pro' | 'open'
+const showModeSelector = ref(false);
+
+const handleSelectMode = (mode) => {
+    reportMode.value = mode;
+    showModeSelector.value = false;
+};
+
 const openFilePreview = async (file) => {
     previewTitle.value = file.name;
 
@@ -237,11 +246,20 @@ const handleSend = () => {
              // Ensure content fallback
              const finalContent = sampleReportContent || '# 报告生成失败\n样本内容未能正确加载。';
              
+             // Collect sources from user messages
+             const allSources = [];
+             messages.value.forEach(msg => {
+                 if (msg.role === 'user' && msg.files && msg.files.length > 0) {
+                     msg.files.forEach(f => allSources.push(f.name));
+                 }
+             });
+
              const newReport = {
                 id: newReportId,
                 title: '2024年度领导班子民主生活会征求意见建议情况报告',
                 create_time: new Date().toLocaleDateString(),
-                content: finalContent
+                content: finalContent,
+                sources: allSources
              };
              store.addReport(newReport);
              
@@ -416,6 +434,7 @@ const onKeydown = (e) => {
                 <span>从模板库选择</span>
               </button>
               
+
               <input 
                 type="file" 
                 ref="fileInput" 
@@ -423,6 +442,60 @@ const onKeydown = (e) => {
                 multiple
                 @change="handleFileSelect" 
               />
+            </div>
+
+            <!-- Report Mode Selector -->
+            <div class="relative ml-auto mr-2">
+                <button 
+                  @click="showModeSelector = !showModeSelector"
+                  class="flex items-center gap-1.5 px-3 py-1.5 hover:bg-slate-50 rounded-lg text-sm font-bold transition-all border border-transparent hover:border-slate-200 group text-slate-700"
+                  :class="{'bg-slate-100': showModeSelector}"
+                >
+                  <span>{{ reportMode === 'pro' ? '专业' : '开放' }}</span>
+                  <Icon icon="ri:arrow-down-s-line" class="text-slate-400 transition-transform duration-200" :class="{'rotate-180': showModeSelector}" />
+                </button>
+
+                <!-- Dropdown Menu -->
+                <div v-if="showModeSelector" class="absolute bottom-full right-0 mb-2 w-72 bg-white rounded-xl shadow-xl border border-gray-100 overflow-hidden z-50 animate-fade-in origin-bottom-right">
+                    <div class="p-2 space-y-1">
+                        <div 
+                           @click="handleSelectMode('pro')"
+                           class="flex items-start gap-3 p-3 rounded-lg cursor-pointer transition-colors"
+                           :class="reportMode === 'pro' ? 'bg-blue-50' : 'hover:bg-gray-50'"
+                        >
+                            <div class="w-8 h-8 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center shrink-0 mt-0.5">
+                                <Icon icon="ri:vip-diamond-fill" />
+                            </div>
+                            <div>
+                                <div class="flex items-center gap-2">
+                                    <span class="font-bold text-gray-800 text-sm">专业报告</span>
+                                    <Icon v-if="reportMode === 'pro'" icon="ri:check-line" class="text-blue-600" />
+                                </div>
+                                <p class="text-xs text-gray-500 mt-1 leading-relaxed">擅长处理高阶数据分析，逻辑严密，思考时间更长</p>
+                            </div>
+                        </div>
+
+                        <div 
+                           @click="handleSelectMode('open')"
+                           class="flex items-start gap-3 p-3 rounded-lg cursor-pointer transition-colors"
+                           :class="reportMode === 'open' ? 'bg-blue-50' : 'hover:bg-gray-50'"
+                        >
+                            <div class="w-8 h-8 rounded-lg bg-green-100 text-green-600 flex items-center justify-center shrink-0 mt-0.5">
+                                <Icon icon="ri:flashlight-fill" />
+                            </div>
+                            <div>
+                                <div class="flex items-center gap-2">
+                                    <span class="font-bold text-gray-800 text-sm">开放报告</span>
+                                    <Icon v-if="reportMode === 'open'" icon="ri:check-line" class="text-blue-600" />
+                                </div>
+                                <p class="text-xs text-gray-500 mt-1 leading-relaxed">快速生成通用型报告，适合日常汇报与总结</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Backdrop to close -->
+                <div v-if="showModeSelector" @click="showModeSelector = false" class="fixed inset-0 z-40" style="background: transparent;"></div>
             </div>
 
             <button 
