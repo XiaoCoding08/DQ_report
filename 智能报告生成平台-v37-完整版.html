@@ -1,0 +1,1217 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"/>
+  <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+  <title>智能报告生成平台 v3.7 (完整版)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://code.iconify.design/3/3.1.1/iconify.min.js"></script>
+  
+  <script src="https://unpkg.com/html-docx-js/dist/html-docx.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+  
+  <style>
+    /* 基础滚动条隐藏 */
+    .hide-scrollbar::-webkit-scrollbar { display: none; }
+    .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    
+    /* 动画 */
+    @keyframes modalIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
+    .animate-modal { animation: modalIn 0.2s ease-out forwards; }
+    
+    /* A4 纸张比例 */
+    .aspect-a4 { aspect-ratio: 210/297; }
+
+    /* ================= 核心样式：统一的文档渲染风格 (V3.5 核心) ================= */
+    .prose-preview { 
+        background: white; 
+        color: #000; 
+        font-family: "SimSun", "Songti SC", serif; /* 仿宋/宋体风格 */
+        line-height: 1.8;
+        word-wrap: break-word;
+    }
+
+    /* 编辑器模式下的 padding */
+    .prose-preview.editor-mode {
+        padding: 40px 50px; 
+        min-height: 100%; 
+    }
+    
+    /* 标题样式 */
+    .prose-preview h1 { font-size: 24px; font-weight: bold; text-align: center; margin-bottom: 30px; margin-top: 10px; color: #000; }
+    .prose-preview h2 { font-size: 18px; font-weight: bold; margin-top: 24px; margin-bottom: 12px; color: #000; border-bottom: 1px solid #000; padding-bottom: 4px; }
+    .prose-preview h3 { font-size: 16px; font-weight: bold; margin-top: 18px; margin-bottom: 8px; color: #000; }
+    .prose-preview p { margin-bottom: 12px; text-align: justify; }
+    
+    /* 列表样式 */
+    .prose-preview ul { list-style: disc; padding-left: 24px; margin-bottom: 12px; }
+    .prose-preview ol { list-style: decimal; padding-left: 24px; margin-bottom: 12px; }
+    
+    /* 表格样式 - 标准实线表格 */
+    .prose-preview table { width: 100%; border-collapse: collapse; margin: 15px 0; font-size: 14px; font-family: sans-serif; }
+    .prose-preview th, .prose-preview td { border: 1px solid #000; padding: 8px 10px; text-align: center; empty-cells: show; }
+    .prose-preview th { background-color: #f2f2f2; font-weight: bold; }
+
+    /* 占位符样式 */
+    .prose-preview .placeholder-tag { 
+        color: #000; 
+        border-bottom: 1px solid #666; 
+        padding: 0 2px; 
+        font-family: monospace; 
+        background: transparent;
+    }
+    
+    /* 引用块 */
+    .prose-preview blockquote {
+        border-left: 3px solid #666;
+        padding-left: 10px;
+        color: #444;
+        margin: 10px 0;
+        font-style: italic;
+    }
+
+    /* V3.5 修改：缩略图容器 */
+    .card-preview-wrapper { width: 100%; height: 100%; overflow: hidden; background: white; position: relative; }
+    .card-scale-container { 
+        transform: scale(0.35); /* 缩放比例 */
+        transform-origin: top left; 
+        width: 285%; /* 1 / 0.35 ≈ 2.85 */
+        padding: 30px; /* 给缩略图一些内边距 */
+        box-sizing: border-box; 
+        background-color: white; 
+        pointer-events: none; 
+        user-select: none; 
+    }
+
+    /* Toast */
+    @keyframes slideInDown { from { transform: translate(-50%, -100%); opacity: 0; } to { transform: translate(-50%, 20px); opacity: 1; } }
+    @keyframes fadeOut { from { opacity: 1; } to { opacity: 0; } }
+    .toast-enter { animation: slideInDown 0.3s ease-out forwards; }
+    .toast-exit { animation: fadeOut 0.3s ease-in forwards; }
+    
+    /* Chat Bubble Styles */
+    .chat-bubble { max-width: 85%; padding: 8px 12px; border-radius: 12px; font-size: 13px; line-height: 1.5; margin-bottom: 10px; position: relative; }
+    .chat-user { background-color: #eff6ff; color: #1e40af; align-self: flex-end; border-bottom-right-radius: 2px; }
+    .chat-ai { background-color: #f3f4f6; color: #374151; align-self: flex-start; border-bottom-left-radius: 2px; border: 1px solid #e5e7eb; }
+    
+    /* 思考状态动画 */
+    .thinking-process { color: #6b7280; font-style: italic; font-size: 12px; display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+    .typing-dot { display: inline-block; width: 4px; height: 4px; border-radius: 50%; background-color: #9ca3af; animation: typing 1.4s infinite ease-in-out both; margin: 0 1px; }
+    .typing-dot:nth-child(1) { animation-delay: -0.32s; }
+    .typing-dot:nth-child(2) { animation-delay: -0.16s; }
+    @keyframes typing { 0%, 80%, 100% { transform: scale(0); } 40% { transform: scale(1); } }
+  </style>
+</head>
+<body class="bg-[#f4f7f9] text-gray-800 font-sans leading-relaxed overflow-hidden">
+  
+  <input type="file" id="hidden-file-input" style="display: none" accept=".pdf,.docx,.txt" />
+  <div id="toast-container" class="fixed top-0 left-1/2 transform -translate-x-1/2 z-[100] w-full max-w-sm pointer-events-none"></div>
+
+  <div class="flex h-screen w-full">
+    <aside class="w-64 bg-white border-r border-gray-200 flex flex-col shrink-0 z-20 shadow-sm">
+      <div class="p-6 flex items-center gap-3">
+        <div class="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center text-white shadow-blue-200 shadow-lg">
+          <span class="iconify w-6 h-6" data-icon="ri:robot-fill"></span>
+        </div>
+        <h1 class="text-xl font-bold tracking-tight text-gray-900">报告生成助手</h1>
+      </div>
+      <nav class="flex-1 px-4 space-y-2 mt-4">
+        <button class="w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-medium text-blue-600 bg-blue-50 border border-blue-100" id="nav-template" onclick="switchMainTab('template')">
+          <span class="iconify w-5 h-5" data-icon="ri:layout-grid-line"></span> 模板管理
+        </button>
+        <button class="w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-medium text-gray-500 hover:bg-gray-100 hover:text-gray-900" id="nav-report" onclick="switchMainTab('report')">
+          <span class="iconify w-5 h-5" data-icon="ri:file-list-3-line"></span> 报告写作
+        </button>
+      </nav>
+      <div class="p-4 text-xs text-gray-400 text-center border-t border-gray-50">v3.5.0 Demo (交互演示版)</div>
+    </aside>
+
+    <main class="flex-1 overflow-hidden relative flex flex-col">
+      <header class="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-8 shrink-0 z-10">
+        <div class="text-gray-500 font-medium flex items-center gap-2" id="breadcrumb">
+            模板管理 <span class="iconify" data-icon="ri:arrow-right-s-line"></span> <span class="text-gray-900 font-bold">模板列表</span>
+        </div>
+        <div class="flex items-center gap-3">
+            <span class="text-sm text-gray-500">演示用户</span>
+            <div class="w-9 h-9 rounded-full bg-gradient-to-tr from-blue-100 to-blue-50 border border-blue-200 flex items-center justify-center text-blue-600 font-bold">D</div>
+        </div>
+      </header>
+
+      <div class="p-8 flex-1 overflow-y-auto bg-[#f4f7f9] view-section" id="view-template-list">
+        <div class="flex justify-between items-center mb-8">
+          <div class="flex items-center gap-3">
+            <h2 class="text-2xl font-bold text-gray-800">模板库</h2>
+            <span class="px-3 py-1 rounded-full text-xs bg-gray-200 text-gray-600" id="template-count">0</span>
+          </div>
+          <div class="flex gap-3">
+            <button class="bg-white border border-gray-200 text-gray-700 hover:border-blue-400 hover:text-blue-600 px-5 py-2.5 rounded-xl font-semibold flex items-center gap-2 transition-all shadow-sm" onclick="openAnalysisModal()">
+              <span class="iconify text-lg" data-icon="ri:magic-line"></span> 智能解析
+            </button>
+            <button class="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-xl font-semibold flex items-center gap-2 transition-all shadow-md" onclick="openNewTemplate()">
+              <span class="iconify text-lg" data-icon="ri:add-line"></span> 新建模板
+            </button>
+          </div>
+        </div>
+        <div class="flex flex-col gap-10 pb-20" id="template-container"></div>
+      </div>
+
+      <div class="p-8 flex-1 overflow-y-auto bg-[#f4f7f9] view-section hidden" id="view-report-list">
+        <div class="flex justify-between items-center mb-8">
+          <div class="flex items-center gap-3">
+            <h2 class="text-2xl font-bold text-gray-800">我的报告</h2>
+            <span class="px-3 py-1 rounded-full text-xs bg-green-100 text-green-700" id="report-count">0</span>
+          </div>
+          <button class="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-xl font-semibold flex items-center gap-2 transition-all shadow-md" onclick="startReportWizard()">
+            <span class="iconify text-lg" data-icon="ri:sparkling-2-fill"></span> 新建写作任务
+          </button>
+        </div>
+        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6 pb-20" id="report-container"></div>
+      </div>
+
+      <div class="flex-1 bg-white hidden view-section h-full overflow-hidden" id="view-report-wizard">
+        <div class="w-full max-w-5xl mx-auto h-full flex flex-col">
+           <div class="shrink-0 py-8 px-6 flex items-center justify-center border-b border-gray-100">
+               <div class="flex items-center gap-4">
+                   <div class="flex items-center gap-2 text-blue-600 font-bold" id="step-1-indicator">
+                       <div class="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center">1</div>
+                       选择模板
+                   </div>
+                   <div class="w-16 h-0.5 bg-gray-200"></div>
+                   <div class="flex items-center gap-2 text-gray-400" id="step-2-indicator">
+                       <div class="w-8 h-8 rounded-full bg-gray-200 text-gray-600 flex items-center justify-center">2</div>
+                       上传材料
+                   </div>
+               </div>
+           </div>
+
+           <div id="wizard-step-1" class="flex-1 flex flex-col min-h-0 overflow-hidden">
+               <div class="shrink-0 py-4 text-center">
+                    <h3 class="text-lg font-bold">请选择一个基础模板</h3>
+               </div>
+               <div class="flex-1 overflow-y-auto px-6 pb-6">
+                   <div class="border border-gray-200 rounded-xl bg-gray-50 p-6">
+                       <div class="flex flex-col gap-8" id="wizard-template-grid"></div>
+                       <div class="h-10"></div>
+                   </div>
+               </div>
+               <div class="shrink-0 py-6 border-t border-gray-100 flex justify-center bg-white z-10">
+                   <button disabled id="btn-next-step" onclick="goToStep2()" class="px-8 py-3 bg-gray-300 text-white rounded-xl font-bold transition-all flex items-center gap-2">
+                       下一步 <span class="iconify" data-icon="ri:arrow-right-line"></span>
+                   </button>
+               </div>
+           </div>
+
+           <div id="wizard-step-2" class="hidden flex-1 flex flex-col items-center justify-center p-8 overflow-y-auto">
+               <div class="w-full max-w-2xl flex flex-col h-[400px]">
+                   <h4 class="font-bold text-gray-700 mb-4 text-center">上传参考文档 (支持多选 PDF/Word/Txt)</h4>
+                   <div id="wizard-upload-zone" class="flex-1 border-2 border-dashed border-blue-300 rounded-2xl bg-blue-50/50 flex flex-col items-center justify-center cursor-pointer hover:bg-blue-50 transition-all relative overflow-hidden" onclick="document.getElementById('context-file-input').click()">
+                       <div id="upload-placeholder" class="flex flex-col items-center justify-center h-full w-full">
+                           <span class="iconify w-16 h-16 text-blue-400 mb-4" data-icon="ri:file-upload-line"></span>
+                           <p class="text-xl font-bold text-blue-900" id="upload-prompt-text">点击上传文档</p>
+                           <p class="text-sm text-blue-400 mt-2">可按住 Ctrl/Cmd 键选择多个文件</p>
+                       </div>
+                       <div id="file-list-container" class="w-full h-full hidden absolute inset-0 bg-white/90 p-4 overflow-y-auto space-y-2 z-10"></div>
+                   </div>
+                   <input type="file" id="context-file-input" class="hidden" accept=".pdf,.docx,.txt" multiple>
+               </div>
+               <div class="mt-10 flex gap-4 justify-center">
+                   <button onclick="backToStep1()" class="px-6 py-3 border border-gray-300 text-gray-600 rounded-xl font-bold hover:bg-gray-50">上一步</button>
+                   <button id="btn-generate" onclick="runGeneration()" class="px-8 py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 shadow-lg shadow-blue-200 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                       <span class="iconify" data-icon="ri:sparkling-fill"></span> 开始生成报告
+                   </button>
+               </div>
+           </div>
+
+           <div id="wizard-loading" class="hidden flex-1 flex flex-col items-center justify-center text-center">
+               <div class="relative w-24 h-24 mb-6">
+                   <div class="absolute inset-0 border-4 border-gray-200 rounded-full"></div>
+                   <div class="absolute inset-0 border-4 border-blue-600 rounded-full border-t-transparent animate-spin"></div>
+                   <span class="iconify absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-10 h-10 text-blue-600" data-icon="ri:robot-line"></span>
+               </div>
+               <h3 class="text-2xl font-bold text-gray-800">正在生成报告...</h3>
+               <p class="text-gray-500 mt-2 font-mono text-sm" id="loading-text">开始...</p>
+           </div>
+        </div>
+      </div>
+
+      <div class="flex-1 flex hidden overflow-hidden bg-white view-section" id="view-editor">
+        <div class="w-1/2 flex flex-col border-r border-gray-200 relative z-10 shadow-[4px_0_24px_rgba(0,0,0,0.02)]">
+          <div class="h-16 px-6 border-b border-gray-200 flex items-center justify-between shrink-0 bg-white">
+            <div class="flex items-center gap-3 flex-1 mr-4">
+              <button class="w-8 h-8 flex items-center justify-center hover:bg-gray-100 rounded-lg text-gray-500 transition-colors" onclick="exitEditor()" title="返回">
+                <span class="iconify w-5 h-5" data-icon="ri:arrow-left-line"></span>
+              </button>
+              <div class="h-6 w-px bg-gray-200 mx-1"></div>
+              <input id="editor-title" class="flex-1 text-lg font-bold outline-none placeholder-gray-300" type="text" placeholder="在此输入标题..."/>
+            </div>
+            <div class="flex gap-2">
+                <button onclick="exportToWord()" class="px-4 py-2 border border-blue-600 text-blue-600 rounded-lg font-medium hover:bg-blue-50 flex items-center gap-2 transition-all">
+                    <span class="iconify" data-icon="ri:file-word-line"></span> 导出 Word
+                </button>
+                <button onclick="saveDocument()" class="px-5 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 shadow-md flex items-center gap-2 transition-all">
+                    <span class="iconify" data-icon="ri:save-3-line"></span> 保存
+                </button>
+            </div>
+          </div>
+          
+          <div class="flex-1 bg-gray-50 p-6 overflow-hidden flex flex-col gap-4">
+             <div class="flex-1 flex flex-col min-h-0">
+                 <div class="flex items-center justify-between mb-2 px-1">
+                     <div class="flex items-center gap-2 text-xs font-bold text-gray-500 uppercase tracking-wider">
+                       <span class="iconify" data-icon="ri:markdown-line"></span> 大纲与内容编辑
+                     </div>
+                 </div>
+                 <div class="flex-1 bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm focus-within:ring-2 focus-within:ring-blue-100 transition-shadow">
+                     <textarea id="editor-content" class="w-full h-full p-6 outline-none resize-none text-gray-700 font-mono text-sm leading-7 hide-scrollbar" placeholder="# 输入标题..."></textarea>
+                 </div>
+             </div>
+
+             <div class="h-[240px] shrink-0 flex flex-col bg-white border border-indigo-100 rounded-xl shadow-sm overflow-hidden ring-1 ring-indigo-50">
+                 <div class="h-8 bg-indigo-50/50 border-b border-indigo-100 px-3 flex items-center justify-between">
+                     <span class="text-xs font-bold text-indigo-600 flex items-center gap-2">
+                         <span class="iconify" data-icon="ri:sparkling-fill"></span> AI 智能助手
+                     </span>
+                     <span class="text-[10px] text-indigo-400">试着输入："帮我扩写第一章" 或 "添加风险评估章节"</span>
+                 </div>
+                 <div class="flex-1 overflow-y-auto p-3 flex flex-col gap-2 bg-white" id="ai-chat-history">
+                     <div class="chat-bubble chat-ai">
+                         你好！我是你的报告助手。<br>我可以帮你调整大纲、扩写内容或润色语气。
+                     </div>
+                 </div>
+                 <div class="h-12 border-t border-gray-100 flex items-center gap-2 px-3 bg-gray-50">
+                     <input id="ai-chat-input" type="text" class="flex-1 bg-transparent text-sm outline-none text-gray-700 placeholder-gray-400" placeholder="在此输入修改建议..." onkeydown="if(event.key==='Enter') sendAiCommand()">
+                     <button onclick="sendAiCommand()" class="w-8 h-8 flex items-center justify-center rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 transition-colors">
+                         <span class="iconify" data-icon="ri:send-plane-fill"></span>
+                     </button>
+                 </div>
+             </div>
+          </div>
+        </div>
+        
+        <div class="w-1/2 bg-gray-100 flex flex-col relative">
+           <div class="h-16 px-6 border-b border-gray-200/50 flex items-center justify-between shrink-0 bg-gray-50/80 backdrop-blur">
+               <span class="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-2">
+                   <span class="iconify" data-icon="ri:file-search-line"></span> 文档预览 (A4)
+               </span>
+               <span class="text-xs text-gray-400"></span>
+           </div>
+           <div class="flex-1 overflow-y-auto p-8 flex justify-center">
+             <div class="bg-white shadow-xl w-[210mm] min-h-[297mm] origin-top transform scale-95 md:scale-100 transition-transform">
+                <div id="preview-render" class="prose-preview editor-mode"></div>
+             </div>
+           </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <div class="fixed inset-0 bg-blue-900/20 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden" id="analysis-modal">
+    <div class="bg-white w-[500px] rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-modal">
+      <div class="p-5 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+        <h3 class="text-lg font-bold text-gray-900">解析文件以创建模板</h3>
+        <button class="p-2 hover:bg-gray-100 rounded-full text-gray-400 transition-colors" onclick="closeAnalysisModal()">
+          <span class="iconify w-5 h-5" data-icon="ri:close-line"></span>
+        </button>
+      </div>
+      <div class="p-8">
+        <div id="upload-zone" class="border-2 border-dashed border-blue-200 rounded-xl bg-blue-50/30 p-10 flex flex-col items-center justify-center cursor-pointer hover:border-blue-500 hover:bg-blue-50 transition-all group" onclick="document.getElementById('hidden-file-input').click()">
+          <div class="w-14 h-14 bg-white rounded-full shadow-sm flex items-center justify-center mb-4 text-blue-500 group-hover:scale-110 transition-transform">
+              <span class="iconify w-7 h-7" data-icon="ri:upload-cloud-2-line"></span>
+          </div>
+          <p class="text-blue-600 font-bold text-base group-hover:underline decoration-2 underline-offset-4">点击上传文档</p>
+        </div>
+        <div id="loading-state" class="hidden py-8 flex flex-col items-center">
+            <span class="iconify w-10 h-10 text-blue-600 animate-spin mb-4" data-icon="ri:loader-4-line"></span>
+            <p class="text-gray-800 font-bold">正在分析结构...</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ================= 模拟数据与状态 =================
+
+    // === 预置的演示用生成结果 (L72井报告) ===
+const DEMO_GENERATED_CONTENT = `# L72井 完井测井解释及油气评价综合报告
+## 第一章 井况概查与地质背景
+### 1.1 基础井情表
+| 项目 | 内容 | 项目 | 内容 |
+| :--- | :--- | :--- | :--- |
+| **井号** | L72井 | **构造位置** | 莫西庄背斜构造带 |
+| **地理位置** | 准噶尔盆地腹部莫西庄凸起 | **测井日期** | 2024年3月18日 |
+| **补心海拔** | 18.50 m | **完钻井深** | 4105.00 m |
+| **最大井斜** | 2.5° | **泥浆体系** | 聚合物磺化钾基 |
+| **泥浆密度** | 1.35 g/cm³ | **泥浆电阻率** | 0.45 Ω·m @ 25℃ |
+### 1.2 区域地质背景与钻探目的
+L72井位于准噶尔盆地腹部的莫西庄凸起构造带上。该构造带长期处于挤压隆升背景，发育多组断裂系统，是有利的油气运移指向区。本区主要沉积相为三角洲前缘沉积，砂体发育良好且横向连通性较强。
+本次钻探的主要地质任务包括：
+1. **探明含油气边界**：重点落实三叠系克拉玛依组（T2k）在莫西庄背斜高部位的含油气富集程度，确定油水界面位置。
+2. **建立解释标准**：通过取心分析与测井资料对比，建立适合该区块低孔低渗储层的“四性”关系（岩性、物性、电性、含油性），为后续开发井网部署提供依据。
+3. **获取工程参数**：精确求取地层压力系数及岩石力学参数，为压裂改造设计提供数据支持。
+## 第二章 测井资料采集与质量控制
+### 2.1 测井作业综述
+本次测井作业由西部钻探公司执行。下井仪器串采用了先进的成像测井系统与常规测井组合。
+**常规系列**：包含自然伽马(GR)、自然电位(SP)、高分辨率双侧向(DLL)、补偿声波(AC)、岩性密度(ZDEN)、补偿中子(CNL)。
+**辅助系列**：井径(CAL)、井温(TEMP)及张力计。
+测井过程中，仪器运行平稳，电缆提升速度控制在800-1000m/h（常规）及300-400m/h（放射性），确保了数据采集的高分辨率。
+### 2.2 环境影响校正与质量评定
+**井眼环境分析**：根据井径曲线(CAL)统计，全井段平均井径为22.5cm，对比钻头直径21.6cm，平均扩径率仅为4.1%。特别是在目的层3900m-4000m井段，井壁光滑规则，未出现明显的崩落或缩径现象，这表明密度为1.35 g/cm³的聚磺钻井液有效平衡了地层压力，泥饼形成质量好。
+**深度校深**：以自然伽马(GR)曲线特征峰为基准，对电阻率、声波、密度及中子曲线进行了严格的深度对齐处理，主测井与重复测量曲线的深度误差控制在0.1m以内。
+**质量结论**：全井段曲线记录连续、形态正常，无跳码、无因仪器故障导致的死测值。自然伽马与自然电位相关性好，孔隙度曲线（声波、密度、中子）在致密层吻合度高。综合评定全井段资料质量为优等（A级），完全满足复杂岩性识别及油气层定量评价的需求。
+## 第三章 地层划分与岩性矿物分析
+### 3.1 地层分层综述
+结合录井岩屑描述、钻时变化及测井自然伽马能谱特征，本井地层层序清晰。重点分析如下：
+**侏罗系八道湾组 (3400.0m - 3800.0m)**：该段地层含有多套煤层，测井响应特征极为显著：自然伽马极低（<20 API）、密度极低（<1.8 g/cm³）、声波时差极高（>350 us/m）、电阻率呈高阻尖峰。煤层是良好的区域性标志层。
+**三叠系克拉玛依组 (3800.0m - 4105.0m)**：此为本井主要目的层。岩性以灰褐色中-细砂岩为主，夹杂薄层泥岩。自然伽马值中等（50-70 API），自然电位负异常明显，反映储层渗透性较好。
+### 3.2 岩性电性特征描述
+利用M-N交会图及密度-中子交会图技术，识别出目的层段主要矿物成分为石英、长石及少量岩屑。
+**砂岩段特征**：在3910m-3925m井段，密度曲线值为2.35-2.45 g/cm³，中子孔隙度与密度孔隙度重合较好，且无“挖掘效应”，指示为纯净砂岩。
+**钙质夹层特征**：在3922m-3925m处，出现高阻（>150 Ω·m）、高密度（>2.7 g/cm³）、低声波（<185 us/m）的特征，判定为钙质胶结致密层。此类夹层不仅是非储层，还是垂直方向上的渗流屏障，对油气分布起遮挡作用。
+## 第四章 复杂岩性识别与参数计算模型
+### 4.1 钙质夹层剔除策略
+针对本井目的层存在的钙质胶结致密层，经程序处理，有效剔除了3处厚度共计4.5米的钙质夹层，避免了平均孔隙度计算虚高，保证了储量计算的准确性。
+### 4.2 泥质含量与孔隙度计算
+**泥质含量**：采用Larionov老地层公式计算。选取纯砂岩线GR_min=35 API，纯泥岩线GR_max=130 API。
+**有效孔隙度**：采用密度-中子-声波三孔隙度模型，并引入泥质校正。
+经岩心归位刻度，计算孔隙度与岩心分析孔隙度（平均18.4%）相对误差小于5%，精度满足要求。
+## 第五章 油气层综合解释成果
+### 5.1 典型层位详细评价
+**（1）主力油层段分析：3910.0m - 3918.0m**
+该段地层厚度8.0米，为全井最优质的储层段。
+**录井显示**：气测全烃(TG)出现爆发式增长，峰值达45.5%，组分中C1占比75%，C2、C3及重烃组分齐全，且比例协调，为典型的油层气测特征。岩屑录井见大量“油斑-油浸”级含油细砂岩，荧光湿照金黄，滴照扩散极快，含油级别极高。
+**测井响应**：深侧向电阻率(RLLD)读数在65-85 Ω·m之间，明显高于背景值（水层约5.5 Ω·m），电阻率增大倍数超过10倍。自然电位(SP)负异常幅度大，与自然伽马(GR)低值对应，指示泥质含量低（平均13%）。
+**定量计算**：计算平均孔隙度18.5%，渗透率约140mD，平均含油饱和度高达65%以上。结合岩性扫描，该段无钙质夹层干扰，为整装厚油层。
+**（2）油水同层/差油层分析：3918.0m - 3922.0m**
+该段紧邻主力油层下部，厚度4.0米。
+**特征描述**：岩性变细，为粉砂岩。自然伽马值略有升高（反映泥质含量增加，Vsh约25%）。电阻率读数下降至22 Ω·m左右，气测全烃值回落至8%左右。
+**评价结论**：由于岩性变差导致束缚水饱和度增加，计算含油饱和度约为55%。考虑到其位于主力油层底部，可能存在油水过渡带特征，解释为差油层。
+**（3）典型水层分析：3980.0m - 3988.0m**
+**特征描述**：物性极好（孔隙度16.5%），但深侧向电阻率仅为5.5 Ω·m，与泥岩电阻率接近。气测无异常显示。自然电位出现大幅度负异常（标准水层特征）。计算含水饱和度接近100%。
+### 5.2 解释成果汇总表
+| 层号 | 顶深 (m) | 底深 (m) | 厚度 (m) | 岩性 | Vsh (%) | 孔隙度 (%) | 渗透率 (mD) | 含油饱和度 (%) | Rt (Ω·m) | 解释结论 |
+| :--- | :------- | :------- | :------- | :--------- | :------ | :--------- | :---------- | :------------- | :--------- | :------------- |
+| 1 | 3910.0 | 3914.5 | 4.5 | 中砂岩 | 12.5 | 19.2 | 160.5 | 68.5 | 85.6 | **油层** |
+| 2 | 3914.5 | 3918.0 | 3.5 | 细砂岩 | 15.0 | 17.8 | 120.0 | 62.0 | 65.4 | **油层** |
+| 3 | 3918.0 | 3922.0 | 4.0 | 粉砂岩 | 25.0 | 14.5 | 25.0 | 55.0 | 22.0 | 差油层 |
+| 4 | 3922.0 | 3925.0 | 3.0 | 钙质砂岩 | 10.0 | 6.5 | 0.5 | 5.0 | 150.0 | 干层(钙质) |
+| 5 | 3940.0 | 3945.0 | 5.0 | 泥岩 | 85.0 | 2.0 | 0.01 | - | 4.5 | 非储层 |
+| 6 | 3950.0 | 3955.0 | 5.0 | 粉砂质泥岩 | 45.0 | 9.0 | 2.0 | 15.0 | 8.0 | 干层 |
+| 7 | 3980.0 | 3988.0 | 8.0 | 细砂岩 | 18.0 | 16.5 | 85.0 | 0.0 | 5.5 | 水层 |
+## 第六章 结论与试油及改造建议
+### 6.1 综合地质结论
+1. **含油气系统评价**：L72井在三叠系克拉玛依组钻遇高丰度油气藏。综合测井解释发现油层2层（累计厚度8.0m），差油层1层（厚度4.0m）。油层物性好（平均孔隙度18.5%），含油饱和度高（>60%），电性特征明显，属于“高孔、中渗、低阻”型岩性油气藏。
+2. **油水界面(OWC)**：通过对3918m差油层及3980m水层的对比分析，推测本井区的油水界面位于海拔深度-3950m左右（对应井深约3970m处），油藏充满度较高。
+3. **地质意义**：本井的成功钻探证实了莫西庄构造带南翼具有良好的成藏条件，扩大了该区块的含油气面积，建议向南翼继续部署评价井。
+### 6.2 试油层位推荐
+为规避水层风险并最大化产能，建议采用“避射水层、优选厚层”的原则：
+**首选方案**：对 **3910.0m - 3918.0m** 井段（1号、2号层）进行合并试油。该段连续性好，隔夹层少，预计日产油量可达30吨以上。
+**备选方案**：若首选方案压力亏空过快，可补射 **3918.0m - 3922.0m** 井段，但需警惕底水锥进风险。
+### 6.3 压裂改造建议
+针对本井储层非均质性强及部分层段渗透率偏低的特点（如3918m-3922m段），建议采取针对性的储层改造措施：
+1. **工艺选择**：建议采用**直井分层压裂**或**大规模体积压裂**技术。鉴于顶底板泥岩遮挡条件良好（应力差>5MPa），可适当提高施工排量（8-10 m³/min）以造长缝。
+2. **材料体系**：
+    **压裂液**：推荐使用**低残渣瓜胶压裂液**或**清洁压裂液**体系，减少对储层的二次伤害，要求破胶液表面张力<25 mN/m。
+    **支撑剂**：鉴于闭合压力适中（约45MPa），建议主体使用**20/40目陶粒**，尾追树脂覆膜砂以防止支撑剂回流。
+3. **施工参数**：设计单层加砂规模30-40m³，砂比15%-25%，确保近井地带的高导流能力，从而释放差油层的产能潜力。`;
+    
+    let templateCategories = [
+        {
+            name: "地质勘测报告",
+            list: [
+                {
+                    id: 'tpl_log_001',
+                    title: '地质勘测报告模板1',
+                    create_time: '2026-01-20',
+                    content: `# 地质勘测报告
+## 第一章 井况概查与地质背景
+### 1.1 基础井情
+### 1.2 区域地质背景与钻探目的
+## 第二章 测井资料采集与质量控制
+### 2.1 测井作业综述
+### 2.2 环境影响校正与质量评定
+## 第三章 地层划分与岩性矿物分析
+### 3.1 地层分层综述
+### 3.2 岩性电性特征描述
+## 第四章 储层参数计算模型与解释方法
+### 4.1 泥质含量计算
+### 4.2 孔隙度计算
+### 4.3 含油饱和度计算
+## 第五章 油气层综合解释成果
+### 5.1 典型层位详细评价
+### 5.2 解释成果汇总表
+## 第六章 结论与试油建议`
+                },
+                {
+                    id: 'tpl_log_002',
+                    title: '地质勘测报告模板2',
+                    create_time: '2026-01-20',
+                    content: `# 地质勘测报告
+## 第一章 井况概查与地质背景
+### 1.1 基础井情
+### 1.2 区域地质背景与钻探目的
+## 第二章 测井资料采集与质量控制
+### 2.1 测井作业综述
+### 2.2 环境影响校正与质量评定
+## 第三章 地层划分与岩性矿物分析
+### 3.1 地层分层综述
+### 3.2 岩性电性特征描述
+## 第四章 储层参数计算模型与解释方法
+### 4.1 泥质含量计算
+### 4.2 孔隙度计算
+### 4.3 含油饱和度计算
+## 第五章 油气层综合解释成果
+### 5.1 典型层位详细评价
+### 5.2 解释成果汇总表
+## 第六章 结论与试油建议`
+                },
+                {
+                    id: 'tpl_log_003',
+                    title: '地质勘测报告模板3',
+                    create_time: '2026-01-20',
+                    content: `# 地质勘测综合报告
+## 第一章 井况概查与地质背景
+### 1.1 基础井情
+### 1.2 区域地质背景与钻探目的
+## 第二章 测井资料采集与质量控制
+### 2.1 测井作业综述
+### 2.2 环境影响校正与质量评定
+## 第三章 地层划分与岩性矿物分析
+### 3.1 地层分层综述
+### 3.2 岩性电性特征描述
+## 第四章 储层参数计算模型与解释方法
+### 4.1 泥质含量计算
+### 4.2 孔隙度计算
+### 4.3 含油饱和度计算
+## 第五章 油气层综合解释成果
+### 5.1 典型层位详细评价
+### 5.2 解释成果汇总表
+## 第六章 结论与试油建议`
+                }
+            ]
+        },
+        {
+            name: "工作总结模板",
+            list: [
+                {
+                    id: 'tpl_work_001',
+                    title: '周工作总结',
+                    create_time: '2026-01-20',
+                    content: '# 周工作总结\n\n## 本周完成\n1. \n2. \n\n## 下周计划\n- \n## 风险与协助\n- '
+                },
+                {
+                    id: 'tpl_work_002',
+                    title: '月度绩效汇报',
+                    create_time: '2026-01-20',
+                    content: '# 月度绩效汇报\n\n## 关键指标达成\n本月完成率：\n\n| 指标 | 目标值 | 实际值 | 达成率 |\n|---|---|---|---|\n| 销售额 |  |  |  |\n| 客户数 |  |  |  |'
+                }
+            ]
+        },
+        {
+            name: "油气综合评价报告",
+            list: [] 
+        }
+    ];
+
+    let reports = [
+        {
+            id: 'rpt_001',
+            title: 'L92井 完井测井解释及油气评价综合报告',
+            create_time: '2026-01-20',
+            content: '# L92井 完井测井解释及油气评价综合报告\n## 第一章 井况概查与地质背景\n### 1.1 基础井情表\n| 项目 | 内容 | 项目 | 内容 |\n| :--- | :--- | :--- | :--- |\n| **井号** | L92井 | **构造位置** | 莫西庄背斜构造带 |\n| **地理位置** | 准噶尔盆地腹部莫西庄凸起 | **测井日期** | 2024年3月18日 |\n| **补心海拔** | 18.50 m | **完钻井深** | 4105.00 m |\n| **最大井斜** | 2.5° | **泥浆体系** | 聚合物磺化钾基 |\n| **泥浆密度** | 1.35 g/cm³ | **泥浆电阻率** | 0.45 Ω·m @ 25℃ |\n### 1.2 区域地质背景与钻探目的\nL92井位于准噶尔盆地腹部的莫西庄凸起构造带上。该构造带长期处于挤压隆升背景，发育多组断裂系统，是有利的油气运移指向区。本区主要沉积相为三角洲前缘沉积，砂体发育良好且横向连通性较强。\n本次钻探的主要地质任务包括：\n1. **探明含油气边界**：重点落实三叠系克拉玛依组（T2k）在莫西庄背斜高部位的含油气富集程度，确定油水界面位置。\n2. **建立解释标准**：通过取心分析与测井资料对比，建立适合该区块低孔低渗储层的“四性”关系（岩性、物性、电性、含油性），为后续开发井网部署提供依据。\n3. **获取工程参数**：精确求取地层压力系数及岩石力学参数，为压裂改造设计提供数据支持。\n## 第二章 测井资料采集与质量控制\n### 2.1 测井作业综述\n本次测井作业由西部钻探公司执行。下井仪器串采用了先进的成像测井系统与常规测井组合。\n**常规系列**：包含自然伽马(GR)、自然电位(SP)、高分辨率双侧向(DLL)、补偿声波(AC)、岩性密度(ZDEN)、补偿中子(CNL)。\n**辅助系列**：井径(CAL)、井温(TEMP)及张力计。\n测井过程中，仪器运行平稳，电缆提升速度控制在800-1000m/h（常规）及300-400m/h（放射性），确保了数据采集的高分辨率。\n### 2.2 环境影响校正与质量评定\n**井眼环境分析**：根据井径曲线(CAL)统计，全井段平均井径为22.5cm，对比钻头直径21.6cm，平均扩径率仅为4.1%。特别是在目的层3900m-4000m井段，井壁光滑规则，未出现明显的崩落或缩径现象，这表明密度为1.35 g/cm³的聚磺钻井液有效平衡了地层压力，泥饼形成质量好。\n**深度校深**：以自然伽马(GR)曲线特征峰为基准，对电阻率、声波、密度及中子曲线进行了严格的深度对齐处理，主测井与重复测量曲线的深度误差控制在0.1m以内。\n**质量结论**：全井段曲线记录连续、形态正常，无跳码、无因仪器故障导致的死测值。自然伽马与自然电位相关性好，孔隙度曲线（声波、密度、中子）在致密层吻合度高。综合评定全井段资料质量为优等（A级），完全满足复杂岩性识别及油气层定量评价的需求。\n## 第三章 地层划分与岩性矿物分析\n### 3.1 地层分层综述\n结合录井岩屑描述、钻时变化及测井自然伽马能谱特征，本井地层层序清晰。重点分析如下：\n**侏罗系八道湾组 (3400.0m - 3800.0m)**：该段地层含有多套煤层，测井响应特征极为显著：自然伽马极低（<20 API）、密度极低（<1.8 g/cm³）、声波时差极高（>350 us/m）、电阻率呈高阻尖峰。煤层是良好的区域性标志层。\n**三叠系克拉玛依组 (3800.0m - 4105.0m)**：此为本井主要目的层。岩性以灰褐色中-细砂岩为主，夹杂薄层泥岩。自然伽马值中等（50-70 API），自然电位负异常明显，反映储层渗透性较好。\n### 3.2 岩性电性特征描述\n利用M-N交会图及密度-中子交会图技术，识别出目的层段主要矿物成分为石英、长石及少量岩屑。\n**砂岩段特征**：在3910m-3925m井段，密度曲线值为2.35-2.45 g/cm³，中子孔隙度与密度孔隙度重合较好，且无“挖掘效应”，指示为纯净砂岩。\n**钙质夹层特征**：在3922m-3925m处，出现高阻（>150 Ω·m）、高密度（>2.7 g/cm³）、低声波（<185 us/m）的特征，判定为钙质胶结致密层。此类夹层不仅是非储层，还是垂直方向上的渗流屏障，对油气分布起遮挡作用。\n## 第四章 复杂岩性识别与参数计算模型\n### 4.1 钙质夹层剔除策略\n针对本井目的层存在的钙质胶结致密层，经程序处理，有效剔除了3处厚度共计4.5米的钙质夹层，避免了平均孔隙度计算虚高，保证了储量计算的准确性。\n### 4.2 泥质含量与孔隙度计算\n**泥质含量**：采用Larionov老地层公式计算。选取纯砂岩线GR_min=35 API，纯泥岩线GR_max=130 API。\n**有效孔隙度**：采用密度-中子-声波三孔隙度模型，并引入泥质校正。\n经岩心归位刻度，计算孔隙度与岩心分析孔隙度（平均18.4%）相对误差小于5%，精度满足要求。\n## 第五章 油气层综合解释成果\n### 5.1 典型层位详细评价\n**（1）主力油层段分析：3910.0m - 3918.0m**\n该段地层厚度8.0米，为全井最优质的储层段。\n**录井显示**：气测全烃(TG)出现爆发式增长，峰值达45.5%，组分中C1占比75%，C2、C3及重烃组分齐全，且比例协调，为典型的油层气测特征。岩屑录井见大量“油斑-油浸”级含油细砂岩，荧光湿照金黄，滴照扩散极快，含油级别极高。\n**测井响应**：深侧向电阻率(RLLD)读数在65-85 Ω·m之间，明显高于背景值（水层约5.5 Ω·m），电阻率增大倍数超过10倍。自然电位(SP)负异常幅度大，与自然伽马(GR)低值对应，指示泥质含量低（平均13%）。\n**定量计算**：计算平均孔隙度18.5%，渗透率约140mD，平均含油饱和度高达65%以上。结合岩性扫描，该段无钙质夹层干扰，为整装厚油层。\n**（2）油水同层/差油层分析：3918.0m - 3922.0m**\n该段紧邻主力油层下部，厚度4.0米。\n**特征描述**：岩性变细，为粉砂岩。自然伽马值略有升高（反映泥质含量增加，Vsh约25%）。电阻率读数下降至22 Ω·m左右，气测全烃值回落至8%左右。\n**评价结论**：由于岩性变差导致束缚水饱和度增加，计算含油饱和度约为55%。考虑到其位于主力油层底部，可能存在油水过渡带特征，解释为差油层。\n**（3）典型水层分析：3980.0m - 3988.0m**\n**特征描述**：物性极好（孔隙度16.5%），但深侧向电阻率仅为5.5 Ω·m，与泥岩电阻率接近。气测无异常显示。自然电位出现大幅度负异常（标准水层特征）。计算含水饱和度接近100%。\n### 5.2 解释成果汇总表\n| 层号 | 顶深 (m) | 底深 (m) | 厚度 (m) | 岩性 | Vsh (%) | 孔隙度 (%) | 渗透率 (mD) | 含油饱和度 (%) | Rt (Ω·m) | 解释结论 |\n| :--- | :------- | :------- | :------- | :--------- | :------ | :--------- | :---------- | :------------- | :--------- | :------------- |\n| 1 | 3910.0 | 3914.5 | 4.5 | 中砂岩 | 12.5 | 19.2 | 160.5 | 68.5 | 85.6 | **油层** |\n| 2 | 3914.5 | 3918.0 | 3.5 | 细砂岩 | 15.0 | 17.8 | 120.0 | 62.0 | 65.4 | **油层** |\n| 3 | 3918.0 | 3922.0 | 4.0 | 粉砂岩 | 25.0 | 14.5 | 25.0 | 55.0 | 22.0 | 差油层 |\n| 4 | 3922.0 | 3925.0 | 3.0 | 钙质砂岩 | 10.0 | 6.5 | 0.5 | 5.0 | 150.0 | 干层(钙质) |\n| 5 | 3940.0 | 3945.0 | 5.0 | 泥岩 | 85.0 | 2.0 | 0.01 | - | 4.5 | 非储层 |\n| 6 | 3950.0 | 3955.0 | 5.0 | 粉砂质泥岩 | 45.0 | 9.0 | 2.0 | 15.0 | 8.0 | 干层 |\n| 7 | 3980.0 | 3988.0 | 8.0 | 细砂岩 | 18.0 | 16.5 | 85.0 | 0.0 | 5.5 | 水层 |\n## 第六章 结论与试油及改造建议\n### 6.1 综合地质结论\n1. **含油气系统评价**：L92井在三叠系克拉玛依组钻遇高丰度油气藏。综合测井解释发现油层2层（累计厚度8.0m），差油层1层（厚度4.0m）。油层物性好（平均孔隙度18.5%），含油饱和度高（>60%），电性特征明显，属于“高孔、中渗、低阻”型岩性油气藏。\n2. **油水界面(OWC)**：通过对3918m差油层及3980m水层的对比分析，推测本井区的油水界面位于海拔深度-3950m左右（对应井深约3970m处），油藏充满度较高。\n3. **地质意义**：本井的成功钻探证实了莫西庄构造带南翼具有良好的成藏条件，扩大了该区块的含油气面积，建议向南翼继续部署评价井。\n### 6.2 试油层位推荐\n为规避水层风险并最大化产能，建议采用“避射水层、优选厚层”的原则：\n**首选方案**：对 **3910.0m - 3918.0m** 井段（1号、2号层）进行合并试油。该段连续性好，隔夹层少，预计日产油量可达30吨以上。\n**备选方案**：若首选方案压力亏空过快，可补射 **3918.0m - 3922.0m** 井段，但需警惕底水锥进风险。\n### 6.3 压裂改造建议\n针对本井储层非均质性强及部分层段渗透率偏低的特点（如3918m-3922m段），建议采取针对性的储层改造措施：\n1. **工艺选择**：建议采用**直井分层压裂**或**大规模体积压裂**技术。鉴于顶底板泥岩遮挡条件良好（应力差>5MPa），可适当提高施工排量（8-10 m³/min）以造长缝。\n2. **材料体系**：\n    **压裂液**：推荐使用**低残渣瓜胶压裂液**或**清洁压裂液**体系，减少对储层的二次伤害，要求破胶液表面张力<25 mN/m。\n    **支撑剂**：鉴于闭合压力适中（约45MPa），建议主体使用**20/40目陶粒**，尾追树脂覆膜砂以防止支撑剂回流。\n3. **施工参数**：设计单层加砂规模30-40m³，砂比15%-25%，确保近井地带的高导流能力，从而释放差油层的产能潜力。'
+        }
+    ];
+
+    let currentMode = 'template'; 
+    let editingId = null; 
+    let selectedTemplateId = null; 
+
+    let uploadedFiles = [];
+
+    // ================= 工具函数 =================
+    
+    function showToast(message, type = 'success') {
+        const container = document.getElementById('toast-container');
+        const toast = document.createElement('div');
+        const styles = {
+            success: "bg-green-50/90 border-green-200 text-green-700",
+            error: "bg-red-50/90 border-red-200 text-red-700",
+            info: "bg-blue-50/90 border-blue-200 text-blue-700"
+        };
+        toast.className = `pointer-events-auto flex items-center gap-3 px-4 py-3 rounded-xl shadow-2xl backdrop-blur-md text-sm font-bold border toast-enter transform transition-all duration-300 mb-3 ${styles[type]}`;
+        toast.innerHTML = `<span class="iconify w-5 h-5 shrink-0" data-icon="ri:notification-badge-line"></span><span>${message}</span>`;
+        container.appendChild(toast);
+        setTimeout(() => { toast.classList.replace('toast-enter', 'toast-exit'); toast.addEventListener('animationend', () => toast.remove()); }, 3000);
+    }
+
+    // ================= V3.5 核心升级：Markdown 解析器 =================
+    function simpleMarkdownToHtml(markdown) {
+        if (!markdown) return '';
+        
+        let html = markdown
+            .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+            // 标题
+            .replace(/^###### (.*$)/gim, '<h6>$1</h6>')
+            .replace(/^##### (.*$)/gim, '<h5>$1</h5>')
+            .replace(/^#### (.*$)/gim, '<h4>$1</h4>')
+            .replace(/^### (.*$)/gim, '<h3>$1</h3>')
+            .replace(/^## (.*$)/gim, '<h2>$1</h2>')
+            .replace(/^# (.*$)/gim, '<h1>$1</h1>')
+            // 加粗
+            .replace(/\*\*(.*?)\*\*/gim, '<b>$1</b>')
+            // 列表
+            .replace(/^- (.*$)/gim, '<ul><li>$1</li></ul>')
+            // 占位符
+            .replace(/\{\{(.*?)\}\}/g, '<span class="placeholder-tag">{{$1}}</span>')
+            // 引用
+            .replace(/^> (.*$)/gim, '<blockquote>$1</blockquote>');
+
+        // 处理表格
+        const lines = html.split('\n');
+        let inTable = false;
+        let tableHtml = '';
+        let resultHtml = '';
+
+        for (let line of lines) {
+            if (line.trim().startsWith('|')) {
+                if (!inTable) {
+                    inTable = true;
+                    tableHtml += '<table>';
+                }
+                if (line.includes('---')) { continue; }
+                
+                let rawCells = line.split('|');
+                let cells = [];
+                if(rawCells.length >= 2) { cells = rawCells.slice(1, -1); } 
+                else { cells = rawCells; }
+                
+                tableHtml += '<tr>';
+                cells.forEach(cell => {
+                    let cellContent = cell.trim();
+                    if(cellContent === '') cellContent = '&nbsp;'; 
+                    if(tableHtml === '<table><tr>') { tableHtml += `<th>${cellContent}</th>`; } 
+                    else { tableHtml += `<td>${cellContent}</td>`; }
+                });
+                tableHtml += '</tr>';
+            } else {
+                if (inTable) {
+                    inTable = false;
+                    tableHtml += '</table>';
+                    resultHtml += tableHtml;
+                    tableHtml = '';
+                }
+                resultHtml += line + '<br>';
+            }
+        }
+        if(inTable) resultHtml += tableHtml + '</table>'; 
+
+        return resultHtml;
+    }
+
+    // ================= V3.5 Word 导出 =================
+    function exportToWord() {
+        const content = document.getElementById('preview-render').innerHTML;
+        const title = document.getElementById('editor-title').value || 'report';
+        const styles = `
+            <style>
+                body { font-family: "SimSun", "Songti SC", serif; line-height: 1.5; color: #000; }
+                h1 { font-size: 24pt; font-weight: bold; text-align: center; margin-bottom: 20pt; }
+                h2 { font-size: 18pt; font-weight: bold; margin-top: 18pt; margin-bottom: 10pt; border-bottom: 1px solid #000; }
+                h3 { font-size: 14pt; font-weight: bold; margin-top: 14pt; margin-bottom: 8pt; }
+                p { font-size: 12pt; text-align: justify; margin-bottom: 10pt; }
+                table { width: 100%; border-collapse: collapse; margin: 10pt 0; font-size: 10.5pt; font-family: sans-serif; }
+                td, th { border: 1px solid #000; padding: 5pt; text-align: center; }
+                th { background-color: #f2f2f2; font-weight: bold; }
+            </style>
+        `;
+        const fullHtml = `<!DOCTYPE html><html><head><meta charset="utf-8">${styles}</head><body>${content}</body></html>`;
+
+        try {
+            if(typeof htmlDocx === 'undefined') { alert('导出库加载失败'); return; }
+            const converted = htmlDocx.asBlob(fullHtml);
+            saveAs(converted, `${title}.docx`);
+            showToast('Word 导出成功！', 'success');
+        } catch (e) { console.error(e); showToast('导出失败，请查看控制台', 'error'); }
+    }
+
+    function getNowDate() {
+        const d = new Date();
+        return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    }
+
+    // ================= 导航逻辑 =================
+    function switchMainTab(tab) {
+        currentMode = tab;
+        document.getElementById('nav-template').className = tab === 'template' 
+            ? "w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-medium text-blue-600 bg-blue-50 border border-blue-100"
+            : "w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-medium text-gray-500 hover:bg-gray-100 hover:text-gray-900";
+        document.getElementById('nav-report').className = tab === 'report'
+            ? "w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-medium text-blue-600 bg-blue-50 border border-blue-100"
+            : "w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-medium text-gray-500 hover:bg-gray-100 hover:text-gray-900";
+        
+        document.querySelectorAll('.view-section').forEach(el => el.classList.add('hidden'));
+
+        const breadcrumb = document.getElementById('breadcrumb');
+        if (tab === 'template') {
+            document.getElementById('view-template-list').classList.remove('hidden');
+            breadcrumb.innerHTML = '模板管理 <span class="iconify" data-icon="ri:arrow-right-s-line"></span> <span class="text-gray-900 font-bold">模板列表</span>';
+            loadTemplates();
+        } else {
+            document.getElementById('view-report-list').classList.remove('hidden');
+            breadcrumb.innerHTML = '报告生成 <span class="iconify" data-icon="ri:arrow-right-s-line"></span> <span class="text-gray-900 font-bold">我的报告</span>';
+            loadReports();
+        }
+    }
+
+    // ================= 数据加载 =================
+    function loadTemplates() { renderTemplateLibrary(); }
+    function loadReports() { renderReportList(); }
+
+    function renderTemplateLibrary() {
+        const container = document.getElementById('template-container');
+        container.innerHTML = '';
+        let totalCount = 0;
+
+        templateCategories.forEach(category => {
+            if (category.list.length === 0) return;
+            totalCount += category.list.length;
+            const categoryTitle = document.createElement('div');
+            categoryTitle.innerHTML = `<h3 class="flex items-center gap-2 text-lg font-bold text-gray-700 border-l-4 border-blue-500 pl-3 mb-4">${category.name} <span class="text-xs font-normal text-gray-400 bg-gray-100 px-2 rounded-full">${category.list.length}</span></h3>`;
+            container.appendChild(categoryTitle);
+
+            const grid = document.createElement('div');
+            grid.className = "grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6";
+            category.list.forEach(item => { grid.appendChild(createCard(item, 'template')); });
+            container.appendChild(grid);
+        });
+        document.getElementById('template-count').innerText = totalCount;
+    }
+
+    function renderReportList() {
+        const container = document.getElementById('report-container');
+        container.innerHTML = '';
+        if (reports.length === 0) { container.innerHTML = `<div class="col-span-full py-20 text-center text-gray-400">暂无数据</div>`; return; }
+        reports.forEach(item => { container.appendChild(createCard(item, 'report')); });
+        document.getElementById('report-count').innerText = reports.length;
+    }
+
+    function createCard(item, type) {
+        const card = document.createElement('div');
+        card.className = "group relative bg-white rounded-xl shadow-sm border border-gray-200 hover:shadow-xl hover:border-blue-400 transition-all cursor-pointer flex flex-col overflow-hidden duration-300";
+        const htmlContent = simpleMarkdownToHtml(item.content || '');
+        const deleteFunc = type === 'template' ? `deleteTemplate('${item.id}', event)` : `deleteReport('${item.id}', event)`;
+        
+        card.innerHTML = `
+            <div class="aspect-a4 bg-gray-50 relative border-b border-gray-100 overflow-hidden">
+                <div class="card-preview-wrapper">
+                    <div class="card-scale-container"><div class="prose-preview">${htmlContent}</div></div>
+                </div>
+                <div class="absolute inset-0 bg-blue-900/10 backdrop-blur-[1px] opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2 z-10">
+                    <button onclick="${deleteFunc}" class="bg-white text-red-500 p-3 rounded-full shadow-lg hover:bg-red-50 hover:scale-110 transition-transform transform translate-y-4 group-hover:translate-y-0 duration-300"><span class="iconify w-6 h-6" data-icon="ri:delete-bin-line"></span></button>
+                </div>
+            </div>
+            <div class="p-4 bg-white relative z-20">
+                <h3 class="font-bold text-gray-800 text-sm truncate mb-1" title="${item.title}">${item.title}</h3>
+                <div class="flex justify-between items-center mt-2">
+                    <span class="text-[10px] text-gray-400 bg-gray-100 px-2 py-0.5 rounded-md font-mono">${item.create_time}</span>
+                </div>
+            </div>`;
+        card.onclick = (e) => { if(!e.target.closest('button')) openEditor(type, item); };
+        return card;
+    }
+
+    // ================= 生成向导 =================
+    function startReportWizard() {
+        document.querySelectorAll('.view-section').forEach(el => el.classList.add('hidden'));
+        document.getElementById('view-report-wizard').classList.remove('hidden');
+        document.getElementById('breadcrumb').innerHTML = '报告生成 <span class="iconify" data-icon="ri:arrow-right-s-line"></span> <span class="text-gray-900 font-bold">新建任务</span>';
+        
+        selectedTemplateId = null;
+        
+        // 【新增】每次打开向导时，清空已上传文件列表
+        uploadedFiles = [];
+        renderFileList(); // 调用一下渲染，重置界面状态
+
+        document.getElementById('wizard-step-1').classList.remove('hidden');
+        document.getElementById('wizard-step-2').classList.add('hidden');
+        document.getElementById('wizard-loading').classList.add('hidden');
+        document.getElementById('btn-next-step').classList.add('opacity-50', 'cursor-not-allowed');
+        document.getElementById('btn-next-step').classList.replace('bg-blue-600', 'bg-gray-300');
+        document.getElementById('btn-next-step').disabled = true;
+        renderWizardTemplates();
+    }
+
+    function renderWizardTemplates() {
+        const container = document.getElementById('wizard-template-grid');
+        container.innerHTML = '';
+        templateCategories.forEach(category => {
+            if (category.list.length === 0) return;
+            const title = document.createElement('h4');
+            title.className = "font-bold text-gray-500 text-sm uppercase tracking-wider border-b border-gray-200 pb-2 mb-2";
+            title.innerText = category.name;
+            container.appendChild(title);
+            const grid = document.createElement('div');
+            grid.className = "grid grid-cols-3 gap-4 mb-2";
+            category.list.forEach(tpl => {
+                const el = document.createElement('div');
+                el.className = "wizard-card bg-white p-4 rounded-lg border border-gray-200 cursor-pointer hover:shadow-md transition-all flex flex-col items-center text-center gap-2";
+                el.innerHTML = `<div class="w-10 h-10 bg-blue-50 text-blue-500 rounded-lg flex items-center justify-center mb-1"><span class="iconify w-5 h-5" data-icon="ri:file-list-2-line"></span></div><h4 class="font-bold text-xs text-gray-800 line-clamp-2">${tpl.title}</h4>`;
+                el.onclick = () => {
+                    document.querySelectorAll('.wizard-card').forEach(c => c.classList.remove('selected-card', 'ring-2', 'ring-blue-500', 'bg-blue-50'));
+                    el.classList.add('selected-card', 'ring-2', 'ring-blue-500', 'bg-blue-50');
+                    selectedTemplateId = tpl.id;
+                    const btn = document.getElementById('btn-next-step');
+                    btn.disabled = false;
+                    btn.classList.remove('opacity-50', 'cursor-not-allowed', 'bg-gray-300');
+                    btn.classList.add('bg-blue-600');
+                };
+                grid.appendChild(el);
+            });
+            container.appendChild(grid);
+        });
+    }
+
+    function goToStep2() {
+        document.getElementById('wizard-step-1').classList.add('hidden');
+        document.getElementById('wizard-step-2').classList.remove('hidden');
+        document.getElementById('step-1-indicator').classList.replace('text-blue-600', 'text-gray-400');
+        document.getElementById('step-1-indicator').children[0].classList.replace('bg-blue-600', 'bg-gray-300');
+        document.getElementById('step-2-indicator').classList.replace('text-gray-400', 'text-blue-600');
+        document.getElementById('step-2-indicator').children[0].classList.replace('bg-gray-200', 'bg-blue-600');
+        document.getElementById('step-2-indicator').children[0].classList.replace('text-gray-600', 'text-white');
+    }
+
+    function backToStep1() {
+        document.getElementById('wizard-step-2').classList.add('hidden');
+        document.getElementById('wizard-step-1').classList.remove('hidden');
+    }
+
+    document.getElementById('context-file-input').onchange = (e) => {
+        const newFiles = Array.from(e.target.files);
+        if(newFiles.length > 0) {
+            // 将新选择的文件追加到全局数组中
+            uploadedFiles = uploadedFiles.concat(newFiles);
+            renderFileList();
+        }
+        // 清空 input，防止用户删除文件后无法再次选择同一个文件
+        e.target.value = ''; 
+    };
+
+    function renderFileList() {
+        const container = document.getElementById('file-list-container');
+        const placeholder = document.getElementById('upload-placeholder');
+        const promptText = document.getElementById('upload-prompt-text');
+        const btnGenerate = document.getElementById('btn-generate');
+
+        container.innerHTML = ''; 
+
+        if (uploadedFiles.length > 0) {
+            // 有文件时：隐藏占位符，显示列表
+            placeholder.classList.add('hidden'); // 隐藏大图标和文字
+            container.classList.remove('hidden'); // 显示列表区域
+            
+            uploadedFiles.forEach((file, index) => {
+                const item = document.createElement('div');
+                item.className = 'flex items-center justify-between bg-white border border-blue-100 px-3 py-2 rounded-lg shadow-sm text-sm group hover:border-blue-300 transition-colors';
+                item.innerHTML = `
+                    <div class="flex items-center gap-2 overflow-hidden flex-1 mr-2">
+                        <span class="iconify text-blue-500 shrink-0" data-icon="ri:file-text-line"></span>
+                        <span class="truncate text-gray-700 font-medium" title="${file.name}">${file.name}</span>
+                    </div>
+                    <div class="flex items-center gap-3 shrink-0">
+                        <span class="text-xs text-gray-400">${(file.size/1024).toFixed(0)}KB</span>
+                        <button onclick="removeFile(${index}, event)" class="text-gray-400 hover:text-red-500 hover:bg-red-50 p-1 rounded-md transition-all" title="删除文件">
+                            <span class="iconify w-4 h-4" data-icon="ri:close-line"></span>
+                        </button>
+                    </div>
+                `;
+                container.appendChild(item);
+            });
+            
+            // 如果你希望保留外框的点击上传功能，可以不完全隐藏 placeholder，
+            // 但为了 UI 整洁，通常列表展示时建议把上传入口变小或者就在列表下方。
+            // 这里为了简单，我们让外层 div 依然可点，所以不隐藏整个 upload-zone，只控制内部显示。
+            // 但因为 placeholder 隐藏了，用户可能不知道点哪里继续上传。
+            // 改进：我们修改一下 promptText 的显示逻辑
+             promptText.innerText = `已选择 ${uploadedFiles.length} 个文件 (点击空白处继续添加)`;
+
+            btnGenerate.disabled = false;
+        } else {
+            // 无文件时：恢复初始状态
+            placeholder.classList.remove('hidden');
+            container.classList.add('hidden');
+            promptText.innerText = '点击上传文档';
+            btnGenerate.disabled = true;
+        }
+    }
+
+    // 【新增】删除单个文件
+    function removeFile(index, e) {
+        e.stopPropagation(); // 防止冒泡触发外层的“点击上传”
+        uploadedFiles.splice(index, 1); // 从数组移除
+        renderFileList(); // 重新渲染
+    }
+
+    function runGeneration() {
+        // const files = document.getElementById('context-file-input').files;
+        const files = uploadedFiles;
+        // 校验：必须选择了模板，且上传了文件
+        if(!selectedTemplateId || files.length === 0) return;
+
+        // 界面切换：隐藏上传页，显示 Loading 页
+        document.getElementById('wizard-step-2').classList.add('hidden');
+        document.getElementById('wizard-loading').classList.remove('hidden');
+        
+        const loadingText = document.getElementById('loading-text');
+        // 模拟更真实的 Loading 步骤
+        const steps = [
+            `正在解析 ${files[0].name} 等 ${files.length} 份文件...`, // 显示真实文件名
+            "正在分析文件内容...",
+            "正在生成图表与结论章节...",
+            "即将完成..."
+        ];
+        
+        let stepIndex = 0;
+        loadingText.innerText = steps[0];
+
+        // 模拟进度条
+        const interval = setInterval(() => {
+            stepIndex++;
+            if(stepIndex < steps.length) {
+                loadingText.innerText = steps[stepIndex];
+            }
+        }, 2500); // 每秒跳一个步骤
+
+        // 模拟生成耗时（总共 4 秒）
+        setTimeout(() => {
+            clearInterval(interval);
+            
+            // 查找用户刚才选中的模板名称（为了让标题看起来对应）
+            let foundTplName = "油气评价综合报告";
+            for (let cat of templateCategories) {
+                const t = cat.list.find(item => item.id === selectedTemplateId);
+                if (t) { foundTplName = t.title; break; }
+            }
+
+            // === 核心修改点：直接使用预置的 L72 报告内容 ===
+            // 无论用户选了什么模板，演示时都输出这份完美报告
+            const newReport = {
+                id: 'rpt_' + Date.now(),
+                // 标题结合了模板名，看起来更像真的
+                title: '基于 ' + foundTplName + ' 生成的 L72井评价报告', 
+                create_time: getNowDate(),
+                content: DEMO_GENERATED_CONTENT // 使用刚才定义的常量
+            };
+            
+            // 将新报告加入列表顶部
+            reports.unshift(newReport);
+
+            // 切换到报告编辑模式
+            currentMode = 'report';
+            editingId = null; 
+            
+            // 打开编辑器展示结果
+            openEditor('report', newReport);
+            
+            showToast('报告生成成功！', 'success');
+        }, 10000); 
+    }
+
+    // ================= 编辑器与 AI 交互逻辑 (核心修改) =================
+    
+    function openNewTemplate() { 
+        currentMode = 'template'; editingId = null;
+        openEditor('template', { title: '', content: '' }); 
+    }
+
+    function openEditor(mode, item) {
+        document.querySelectorAll('.view-section').forEach(el => el.classList.add('hidden'));
+        document.getElementById('view-editor').classList.remove('hidden');
+        
+        currentMode = mode;
+        editingId = item.id || null;
+        
+        document.getElementById('editor-title').value = item.title;
+        document.getElementById('editor-content').value = item.content;
+        
+        // 重置聊天
+        document.getElementById('ai-chat-history').innerHTML = `
+            <div class="chat-bubble chat-ai">
+                你好！我是你的报告助手。<br>我可以帮你调整大纲、扩写内容或润色语气。
+            </div>
+        `;
+
+        updatePreview(item.content);
+        const breadcrumb = document.getElementById('breadcrumb');
+        breadcrumb.innerHTML = `${mode === 'template' ? '模板管理' : '报告生成'} <span class="iconify" data-icon="ri:arrow-right-s-line"></span> <span class="text-gray-900 font-bold">${mode === 'template' ? '编辑模板' : '编辑报告'}</span>`;
+    }
+
+    function exitEditor() { switchMainTab(currentMode); }
+    document.getElementById('editor-content').addEventListener('input', (e) => updatePreview(e.target.value));
+    function updatePreview(text) { document.getElementById('preview-render').innerHTML = simpleMarkdownToHtml(text); }
+
+    // 【新增逻辑】这里是真正模拟智能交互的核心函数
+    // 【新增逻辑】模拟智能交互的核心函数
+// 【终极合体版】同时支持模板结构修改 和 报告内容智能修订
+    function sendAiCommand() {
+        const input = document.getElementById('ai-chat-input');
+        const text = input.value.trim();
+        if(!text) return;
+
+        // 1. 显示用户消息
+        const history = document.getElementById('ai-chat-history');
+        const userBubble = document.createElement('div');
+        userBubble.className = 'chat-bubble chat-user';
+        userBubble.innerText = text;
+        history.appendChild(userBubble);
+        
+        input.value = '';
+        history.scrollTop = history.scrollHeight;
+
+        // 2. 根据模式显示不同的思考状态文案
+        let thinkingText = currentMode === 'template' 
+            ? "正在分析模板结构..." 
+            : "正在研读报告内容与数据...";
+            
+        const loadingBubble = document.createElement('div');
+        loadingBubble.className = 'chat-bubble chat-ai';
+        loadingBubble.id = 'ai-loading-bubble';
+        loadingBubble.innerHTML = `
+            <div class="thinking-process">
+                <span class="iconify" data-icon="ri:brain-line"></span> ${thinkingText}
+            </div>
+            <div class="mt-2"><span class="typing-dot"></span><span class="typing-dot"></span><span class="typing-dot"></span></div>
+        `;
+        history.appendChild(loadingBubble);
+        history.scrollTop = history.scrollHeight;
+
+        // 3. 模拟异步思考与处理
+        setTimeout(() => {
+            const loadingEl = document.getElementById('ai-loading-bubble');
+            if(loadingEl) loadingEl.remove();
+
+            const editor = document.getElementById('editor-content');
+            let currentContent = editor.value;
+            let aiResponseText = "";
+            let commandType = "";
+
+            // ============================================================
+            // 逻辑分支一：模板模式 (Template Mode) - 侧重结构修改
+            // ============================================================
+            if (currentMode === 'template') {
+                
+                // 1.1 增加章节 (Add Chapter)
+                if (text.includes("增加") || text.includes("添加") || (text.includes("章") || text.includes("HSE"))) {
+                    commandType = "add_chapter";
+                    const newChapter = `\n\n## 第七章 环保要求\n### 7.1 现场作业安全评估\n### 7.2 环境保护与废液回收\n`;
+                    if (!currentContent.includes("第七章")) {
+                        currentContent += newChapter;
+                        aiResponseText = "【结构调整】已在模板末尾新增了 **第七章 环保要求** 及其子结构。";
+                    } else {
+                        aiResponseText = "该章节已存在。";
+                    }
+                }
+                // 1.2 删除章节 (Delete Section)
+                else if (text.includes("删除") || text.includes("去掉")) {
+                    commandType = "delete_section";
+                    // 演示删除 3.2 节
+                    const targetHeader = "### 3.2 岩性电性特征描述";
+                    if (currentContent.includes(targetHeader)) {
+                        currentContent = currentContent.replace(targetHeader, "");
+                        aiResponseText = "【结构调整】已将 **3.2 岩性电性特征描述** 从大纲中移除。";
+                    } else {
+                        aiResponseText = "未找到目标章节，无法删除。";
+                    }
+                }
+                // 1.3 修改表格列 (Modify Table)
+                else if (text.includes("表格") || (text.includes("列") || text.includes("备注"))) {
+                    commandType = "modify_table";
+                    const oldHeader = "| 项目 | 内容 | 项目 | 内容 |";
+                    const newHeader = "| 项目 | 内容 | 项目 | 内容 | 备注(Remarks) |";
+                    const oldAlign = "| :--- | :--- | :--- | :--- |";
+                    const newAlign = "| :--- | :--- | :--- | :--- | :--- |";
+                    
+                    if (currentContent.includes(oldHeader)) {
+                        currentContent = currentContent
+                            .replace(oldHeader, newHeader)
+                            .replace(oldAlign, newAlign)
+                            .replace(/\|\n/g, "|  |\n");
+                        aiResponseText = "【表格优化】已调整 **1.1 表格结构**，增加了一列“备注(Remarks)”。";
+                    } else {
+                         aiResponseText = "未定位到标准表格结构，请确认光标位置。";
+                    }
+                }
+                // 1.4 模板模式默认回复
+                else {
+                    aiResponseText = "我是模板设计助手。您可以对我说：\n1. **“增加 HSE 章节”**\n2. **“删除 3.2 节”**\n3. **“给表格加一列备注”**";
+                }
+            }
+
+            // ============================================================
+            // 逻辑分支二：报告模式 (Report Mode) - 侧重内容修订
+            // ============================================================
+            else {
+                
+                // 2.1 修改具体数据 (Correct Data - L72井)
+                if (text.includes("修改") || text.includes("更正") || text.includes("确认") || text.includes("速度")) {
+                    commandType = "modify_data";
+                    const originalSentence = "测井过程中，仪器运行平稳，电缆提升速度控制在800-1000m/h（常规）及300-400m/h（放射性），确保了数据采集的高分辨率。";
+                    const newSentence = "测井过程中，仪器运行平稳。根据最新施工日报核对，常规曲线电缆提升速度优化为 **1200m/h**，放射性测井速度严格控制在 **250m/h**（高精度模式），以确保薄层识别率。";
+
+                    if (currentContent.includes(originalSentence)) {
+                        currentContent = currentContent.replace(originalSentence, newSentence);
+                        aiResponseText = "【数据修正】已为您修改了第二章 2.1节，根据指令更正了具体数据。";
+                    } else {
+                        aiResponseText = "未能精准定位到原始数据语句，请确认该段落是否已被修改。";
+                    }
+                }
+                // 2.2 扩写内容 (Expand Content)
+                else if (text.includes("扩写") || text.includes("详细") || text.includes("丰富")) {
+                    commandType = "expand_content";
+                    const targetText = "L72井位于准噶尔盆地腹部的莫西庄凸起构造带上。该构造带长期处于挤压隆升背景，发育多组断裂系统，是有利的油气运移指向区。本区主要沉积相为三角洲前缘沉积，砂体发育良好且横向连通性较强。";
+                    const replacementText = "L72井构造位置位于准噶尔盆地腹部莫西庄凸起构造带南翼。该构造带经历了海西期、印支期及燕山期多期构造运动的叠加改造，形成了现今“两隆夹一凹”的构造格局。受北向南的挤压逆冲应力场控制，深部高角度逆断层极为发育，有效沟通了二叠系主力烃源岩，为油气垂向运移提供了高效通道。\n\n沉积相精细分析表明，目的层三叠系克拉玛依组（T2k）主要发育辫状河三角洲前缘亚相沉积。水下分流河道砂体呈叠置连片状分布，单砂体厚度大（平均 >5m），储层横向非均质性弱，纵向连通性好，具备形成大型整装岩性-构造油气藏的优越地质条件。";
+                    
+                    if (currentContent.includes(targetText.substring(0, 20))) {
+                        currentContent = currentContent.replace(targetText, replacementText);
+                        aiResponseText = "【内容扩写】已对**“1.2 区域地质背景”**进行了深度扩写，补充了构造演化史及沉积微相的详细地质分析。";
+                    } else {
+                         currentContent += "\n\n### [AI 补充详情]\n根据指令补充：建议加强对微构造的研究。";
+                         aiResponseText = "已在文末补充了相关详细信息。";
+                    }
+                }
+                // 2.3 增加生产建议章节 (Add Report Chapter)
+                else if (text.includes("添加") || text.includes("增加") || text.includes("章") || text.includes("节") || text.includes("内容") || (text.includes("生产") || text.includes("建议"))) {
+                    commandType = "add_report_chapter";
+                    const newChapter = `\n\n## 第七章 后续跟踪与生产建议\n### 7.1 生产动态监测\n鉴于L72井主力油层（3910m-3918m）渗透率较高（140mD），建议投产初期控制生产压差在 3-5MPa 范围内。\n### 7.2 数字化档案建设\n建议将本井数据录入“数字岩心”数据库。`;
+                    if(!currentContent.includes("第七章")) {
+                        currentContent += newChapter;
+                        aiResponseText = "【章节补充】已根据试油结论，在报告末尾补充了**“第七章 后续跟踪与生产建议”**。";
+                    } else {
+                        aiResponseText = "报告中已包含生产建议章节。";
+                    }
+                }
+                // 2.4 润色 (Polish)
+                else if (text.includes("润色") || text.includes("专业") || text.includes("语气")) {
+                    commandType = "polish";
+                    currentContent = currentContent
+                        .replace(/物性好/g, "物性优越")
+                        .replace(/吻合度高/g, "吻合度极高")
+                        .replace(/推测/g, "综合研判")
+                        .replace(/# /g, '# [AI精修] ');
+                    aiResponseText = "【全文润色】已修正部分口语化表达（如“物性好”->“物性优越”），并提升了报告的专业度。";
+                }
+                // 2.5 报告模式默认回复
+                else {
+                    aiResponseText = "我是报告生成助手。您可以对我说：\n1. **“修改第二章测井速度”**\n2. **“扩写地质背景”**\n3. **“全文润色”**";
+                }
+            }
+
+            // 更新编辑器和预览
+            editor.value = currentContent;
+            updatePreview(currentContent);
+
+            // 添加 AI 回复气泡
+            const aiBubble = document.createElement('div');
+            aiBubble.className = 'chat-bubble chat-ai';
+            aiBubble.innerHTML = aiResponseText;
+            history.appendChild(aiBubble);
+            history.scrollTop = history.scrollHeight;
+
+            if(commandType) {
+                showToast('智能修改已应用', 'success');
+            }
+
+        }, 3500); 
+    }
+
+    // ================= 通用功能 =================
+    function saveDocument() {
+        const title = document.getElementById('editor-title').value;
+        const content = document.getElementById('editor-content').value;
+        if(!title) return showToast('请输入标题', 'error');
+
+        if (currentMode === 'template') {
+            if (editingId) {
+                for (let cat of templateCategories) {
+                    const idx = cat.list.findIndex(t => t.id === editingId);
+                    if (idx > -1) { cat.list[idx].title = title; cat.list[idx].content = content; break; }
+                }
+            } else {
+                templateCategories[templateCategories.length - 1].list.unshift({ id: 'tpl_' + Date.now(), title: title, content: content, create_time: getNowDate() });
+            }
+        } else {
+            if (editingId) {
+                const idx = reports.findIndex(r => r.id === editingId);
+                if (idx > -1) { reports[idx].title = title; reports[idx].content = content; }
+            } else {
+                reports.unshift({ id: 'rpt_' + Date.now(), title: title, content: content, create_time: getNowDate() });
+            }
+        }
+        showToast('保存成功', 'success');
+        exitEditor();
+    }
+
+    function deleteTemplate(id, e) {
+        e.stopPropagation();
+        if(!confirm('确定删除此模板？')) return;
+        for (let cat of templateCategories) {
+            const idx = cat.list.findIndex(t => t.id === id);
+            if (idx > -1) { cat.list.splice(idx, 1); break; }
+        }
+        loadTemplates(); showToast('删除成功', 'info');
+    }
+    
+    function deleteReport(id, e) {
+        e.stopPropagation();
+        if(!confirm('确定删除此报告？')) return;
+        reports = reports.filter(r => r.id !== id);
+        loadReports(); showToast('删除成功', 'info');
+    }
+
+    function openAnalysisModal() { document.getElementById('analysis-modal').classList.remove('hidden'); }
+    function closeAnalysisModal() { document.getElementById('analysis-modal').classList.add('hidden'); }
+    
+    document.getElementById('hidden-file-input').onchange = (e) => {
+        const file = e.target.files[0];
+        if(!file) return;
+        document.getElementById('upload-zone').classList.add('hidden');
+        document.getElementById('loading-state').classList.remove('hidden');
+        setTimeout(() => {
+            closeAnalysisModal();
+            currentMode = 'template';
+            editingId = null;
+            const mockContent = `# 油气评价综合报告
+## 第一章 井况概查与地质背景
+### 1.1 基础井情表
+| 项目 | 内容 | 项目 | 内容 |
+| :--- | :--- | :--- | :--- |
+| **井号** |  | **构造位置** |  |
+| **地理位置** |  | **测井日期** |  |
+| **补心海拔** |  | **完钻井深** |  |
+| **最大井斜** |  | **泥浆体系** |  |
+| **泥浆密度** |  | **泥浆电阻率** |  |
+### 1.2 区域地质背景与钻探目的
+## 第二章 测井资料采集与质量控制
+### 2.1 测井作业综述
+### 2.2 环境影响校正与质量评定
+## 第三章 地层划分与岩性矿物分析
+### 3.1 地层分层综述
+### 3.2 岩性电性特征描述
+## 第四章 储层参数计算模型与解释方法
+### 4.1 泥质含量计算
+### 4.2 孔隙度计算
+### 4.3 含油饱和度计算
+## 第五章 油气层综合解释成果
+### 5.1 典型层位详细评价
+### 5.2 解释成果汇总表
+## 第六章 结论与试油建议`;
+            openEditor('template', { title: `解析: ${file.name}`, content: mockContent });
+            document.getElementById('upload-zone').classList.remove('hidden');
+            document.getElementById('loading-state').classList.add('hidden');
+        }, 5000);
+        e.target.value = ''; 
+    };
+
+    window.onload = () => switchMainTab('template');
+  </script>
+</body>
+</html>
