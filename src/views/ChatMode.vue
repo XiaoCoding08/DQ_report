@@ -122,7 +122,7 @@ const previewContent = ref('');
 const previewTitle = ref('');
 
 // Report Mode Logic
-const reportMode = ref('pro'); // 'pro' | 'open'
+const reportMode = ref('open'); // 'pro' | 'open'
 const showModeSelector = ref(false);
 
 const handleSelectMode = (mode) => {
@@ -451,7 +451,7 @@ const onKeydown = (e) => {
                   class="flex items-center gap-1.5 px-3 py-1.5 hover:bg-slate-50 rounded-lg text-sm font-bold transition-all border border-transparent hover:border-slate-200 group text-slate-700"
                   :class="{'bg-slate-100': showModeSelector}"
                 >
-                  <span>{{ reportMode === 'pro' ? 'Pro' : '开放' }}</span>
+                  <span>{{ reportMode === 'pro' ? '专业' : '开放' }}</span>
                   <Icon icon="ri:arrow-down-s-line" class="text-slate-400 transition-transform duration-200" :class="{'rotate-180': showModeSelector}" />
                 </button>
 
