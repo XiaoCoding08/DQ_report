@@ -5,6 +5,7 @@ import { Icon } from '@iconify/vue';
 import { useReportStore } from '../stores/useReportStore';
 import DocPreview from '../components/editor/DocPreview.vue';
 import { parseFile } from '../utils/fileParser';
+import { renderMarkdown } from '../utils/markdown';
 import openSample from '../assets/open_sample.txt?raw';
 import professionalSample from '../assets/professional_sample.txt?raw';
 
@@ -334,7 +335,7 @@ const onKeydown = (e) => {
             <Icon icon="ri:robot-2-line" class="text-lg" />
           </div>
           <div class="bg-white p-4 rounded-2xl rounded-tl-none shadow-sm border border-slate-100">
-            <p class="text-sm leading-relaxed text-slate-700">{{ msg.content }}</p>
+            <div class="text-sm leading-relaxed text-slate-700 markdown-content" v-html="renderMarkdown(msg.content)"></div>
           </div>
         </div>
 
@@ -607,5 +608,30 @@ const onKeydown = (e) => {
   0% { transform: translateX(-100%); }
   50% { transform: translateX(0%); }
   100% { transform: translateX(100%); }
+}
+
+/* Markdown Styles for Chat */
+.markdown-content :deep(p) {
+  margin-bottom: 0.5em;
+}
+.markdown-content :deep(p):last-child {
+  margin-bottom: 0;
+}
+.markdown-content :deep(strong) {
+  font-weight: 600;
+  color: #334155; /* slate-700 darker */
+}
+.markdown-content :deep(ul) {
+  list-style-type: disc;
+  padding-left: 1.25em;
+  margin: 0.5em 0;
+}
+.markdown-content :deep(ol) {
+  list-style-type: decimal;
+  padding-left: 1.25em;
+  margin: 0.5em 0;
+}
+.markdown-content :deep(li) {
+  margin-bottom: 0.25em;
 }
 </style>
