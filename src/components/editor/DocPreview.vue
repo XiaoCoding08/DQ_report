@@ -59,4 +59,8 @@ const htmlContent = computed(() => renderMarkdown(props.content));
 
 /* 引用块 */
 .prose-preview blockquote { border-left: 4px solid #ccc; padding-left: 10px; color: #666; font-style: italic; margin: 10px 0; }
+
+/* 图片样式：报告中的图 */
+.prose-preview img { max-width: 100%; height: auto; display: block; margin: 12px 0; }
+.prose-preview img[src="图占位"] { min-height: 120px; background: #f0f0f0; border: 1px dashed #999; }
 </style>
